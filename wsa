@@ -1,0 +1,224 @@
+#!/bin/bash
+
+# Define colores
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}"
+echo " __          _______         "
+echo " \ \        / / ____|  /\   "
+echo "  \ \  /\  / / (___   /  \   "
+echo "   \ \/  \/ / \___ \ / /\ \  "
+echo "    \  /\  /  ____) / ____ \ "
+echo "     \/  \/  |_____/_/    \_\ "
+echo -e "${NC}"
+
+# Función para mostrar el mensaje de ayuda con colores
+show_help() {
+  echo -e "${BLUE}Usage: $0 [OPTIONS] domain.com${NC}"
+  echo ""
+  echo -e "${CYAN}Options:${NC}"
+  echo -e "  ${GREEN}-h${NC}            Show this help message"
+  echo -e "  ${GREEN}domain.com${NC}    Target domain to scan"
+  echo ""
+  echo -e "${CYAN}Example:${NC}"
+  echo -e "  $0 example.com"
+  echo ""
+  echo -e "${CYAN}Tools Used:${NC}"
+  echo -e "  ${YELLOW}subfinder${NC}     A tool to find subdomains of a given domain."
+  echo -e "  ${YELLOW}httpx-toolkit${NC} A fast and flexible HTTPX client for probing URLs."
+  echo -e "  ${YELLOW}katana${NC}        A fast web crawler to discover JavaScript files and endpoints."
+  echo -e "  ${YELLOW}nuclei${NC}        A powerful vulnerability scanner to find security issues in web apps."
+  echo -e "  ${YELLOW}SecretFinder${NC}  A tool to discover secrets in JavaScript files."
+  echo ""
+  echo -e "${CYAN}Descriptions:${NC}"
+  echo -e "  ${BLUE}- Subfinder${NC} is used to enumerate subdomains."
+  echo -e "  ${BLUE}- httpx-toolkit${NC} is used to check the availability and status of subdomains."
+  echo -e "  ${BLUE}- Katana${NC} is used to collect JavaScript files and find potential endpoints."
+  echo -e "  ${BLUE}- Nuclei${NC} is used to scan for vulnerabilities in URLs and endpoints."
+  echo -e "  ${BLUE}- SecretFinder${NC} is used to search for sensitive information in JavaScript files."
+}
+
+# Validar entrada y opciones
+if [[ $# -eq 0 ]]; then
+  show_help
+  exit 1
+fi
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
+# Asignar el dominio y preparar variables
+DOMAIN=$1
+BASE_DOMAIN=$(echo $DOMAIN | awk -F. '{print $(NF-1)}')
+OUTPUT_DIR="output/$BASE_DOMAIN"
+
+# Archivos de entrada y salida
+SUBDOMAINS_FILE="$OUTPUT_DIR/${DOMAIN}_subdomains.txt"
+HTTPX_OUTPUT_FILE="$OUTPUT_DIR/${DOMAIN}_httpx.txt"
+KATANA_OUTPUT_FILE="$OUTPUT_DIR/${DOMAIN}_katana.txt"
+JS_URLS_FILE="$OUTPUT_DIR/${DOMAIN}_js_urls.txt"
+SECRET_OUTPUT_FILE="$OUTPUT_DIR/${DOMAIN}_secret.txt"
+EQUALS_URLS_FILE="$OUTPUT_DIR/${DOMAIN}_equals_urls.txt"
+URLS_BEFORE_EQUALS_FILE="$OUTPUT_DIR/${DOMAIN}_urls_before_equals.txt"
+NUCLEI_RESULTS_FILE="$OUTPUT_DIR/${DOMAIN}_nuclei_results.txt"
+
+# Crear directorio de salida
+mkdir -p "$OUTPUT_DIR"
+
+# Función para manejar señales SIGINT
+handle_sigint() {
+  echo -e "${YELLOW}[*] Signal received. Interrupting the current command...${NC}"
+  if [[ -n "$current_command_pid" ]]; then
+    kill -INT "$current_command_pid" 2>/dev/null
+    wait "$current_command_pid" 2>/dev/null
+  fi
+}
+
+# Función para mostrar animación de carga
+show_loading() {
+  local pid=$1
+  local delay=0.1
+  local spin='|/-\'
+  
+  while kill -0 "$pid" 2>/dev/null; do
+    for i in $(seq 0 3); do
+      printf "\rLoading... ${spin:$i:1}"
+      sleep $delay
+    done
+  done
+  printf "\rDone!                     \n"
+}
+
+# Función para encontrar subdominios
+find_subdomains() {
+  echo -e "${BLUE}[*] Finding subdomains for $DOMAIN...${NC}"
+  sudo subfinder -d $DOMAIN -all -silent > "$SUBDOMAINS_FILE" 2>> "$OUTPUT_DIR/script.log" &
+  current_command_pid=$!
+  show_loading $current_command_pid
+  LINE_COUNT_SUBFINDER=$(wc -l < "$SUBDOMAINS_FILE")
+  echo -e "${GREEN}[*] Subdomains saved to '$SUBDOMAINS_FILE'. Total: $LINE_COUNT_SUBFINDER${NC}"
+}
+
+# Función para comprobar subdominios con httpx
+check_subdomains_httpx() {
+  echo -e "${BLUE}[*] Checking subdomains with httpx...${NC}"
+  echo -e "${BLUE}[*] Using file: $SUBDOMAINS_FILE${NC}"
+  httpx-toolkit -l "$SUBDOMAINS_FILE" -silent -o "$HTTPX_OUTPUT_FILE" 2>> "$OUTPUT_DIR/script.log" &
+  current_command_pid=$!
+  show_loading $current_command_pid
+  HTTPX_LINE_COUNT=$(wc -l < "$HTTPX_OUTPUT_FILE")
+  echo -e "${GREEN}[*] httpx-toolkit scan completed and saved to '$HTTPX_OUTPUT_FILE'. Total results: $HTTPX_LINE_COUNT${NC}"
+}
+
+# Función para ejecutar Katana
+run_katana() {
+  echo -e "${BLUE}[*] Running Katana with JavaScript Collection and Depth on $DOMAIN...${NC}"
+  echo -e "${BLUE}[*] Output file: $KATANA_OUTPUT_FILE${NC}"
+  katana -u "https://$DOMAIN" -jc -d 5 -o "$KATANA_OUTPUT_FILE" > "$OUTPUT_DIR/katana.log" 2>&1 &
+  current_command_pid=$!
+  show_loading $current_command_pid
+  KATANA_LINE_COUNT=$(wc -l < "$KATANA_OUTPUT_FILE")
+  echo -e "${GREEN}[*] Katana scan completed and saved to '$KATANA_OUTPUT_FILE'. Total results: $KATANA_LINE_COUNT${NC}"
+}
+
+# Función para extraer URLs antes del '='
+extract_urls_before_equals() {
+  echo -e "${BLUE}[*] Extracting URLs before '=' from Katana results...${NC}"
+  echo -e "${BLUE}[*] Input file: $KATANA_OUTPUT_FILE${NC}"
+  echo -e "${BLUE}[*] Output file: $URLS_BEFORE_EQUALS_FILE${NC}"
+  awk -F '=' '/=/ {print $1 "="}' "$KATANA_OUTPUT_FILE" > "$URLS_BEFORE_EQUALS_FILE"
+  URLS_BEFORE_EQUALS_LINE_COUNT=$(wc -l < "$URLS_BEFORE_EQUALS_FILE")
+  echo -e "${GREEN}[*] URLs before '=' extracted and saved to '$URLS_BEFORE_EQUALS_FILE'. Total URLs: $URLS_BEFORE_EQUALS_LINE_COUNT${NC}"
+}
+
+# Función para extraer URLs con '='
+extract_urls_with_equals() {
+  echo -e "${BLUE}[*] Extracting URLs with '=' from Katana results...${NC}"
+  echo -e "${BLUE}[*] Input file: $KATANA_OUTPUT_FILE${NC}"
+  echo -e "${BLUE}[*] Output file: $EQUALS_URLS_FILE${NC}"
+  grep '=' "$KATANA_OUTPUT_FILE" | awk -F '=' '{print $1 "="}' > "$EQUALS_URLS_FILE"
+  EQUALS_URLS_LINE_COUNT=$(wc -l < "$EQUALS_URLS_FILE")
+  echo -e "${GREEN}[*] URLs with '=' extracted and saved to '$EQUALS_URLS_FILE'. Total URLs: $EQUALS_URLS_LINE_COUNT${NC}"
+}
+
+# Función para ejecutar Nuclei
+run_nuclei() {
+  echo -e "${BLUE}[*] Running Nuclei on URLs with '=' extracted by Katana...${NC}"
+  nuclei -l "$EQUALS_URLS_FILE" -tags 'lfi' -c 30 -o "$NUCLEI_RESULTS_FILE" -debug > "$OUTPUT_DIR/nuclei.log" 2>&1 &
+  current_command_pid=$!
+  show_loading $current_command_pid
+  echo -e "${GREEN}[*] Nuclei scan completed. Results saved to '$NUCLEI_RESULTS_FILE'.${NC}"
+
+  DBG_RESULTS_FILE="$OUTPUT_DIR/${DOMAIN}_dbg_results.txt"
+  grep -a "DBG" "$OUTPUT_DIR/nuclei.log" > "$DBG_RESULTS_FILE"
+  echo -e "${GREEN}[*] Extracted DBG lines saved to '$DBG_RESULTS_FILE'.${NC}"
+}
+
+# Función para ejecutar Nuclei en subdominios
+run_nuclei_on_subdomains() {
+  echo -e "${BLUE}[*] Running Nuclei on subdomains found by Subfinder...${NC}"
+  nuclei -l "$HTTPX_OUTPUT_FILE" -tags 'lfi' -c 30 -o "$OUTPUT_DIR/${DOMAIN}_nuclei_subdomains_results.txt" -debug > "$OUTPUT_DIR/nuclei_subdomains.log" 2>&1 &
+  current_command_pid=$!
+  show_loading $current_command_pid
+  echo -e "${GREEN}[*] Nuclei scan on subdomains completed. Results saved to '$OUTPUT_DIR/${DOMAIN}_nuclei_subdomains_results.txt'.${NC}"
+  DBG_SUBDOMAINS_RESULTS_FILE="$OUTPUT_DIR/${DOMAIN}_dbg_subdomains_results.txt"
+  grep -a "DBG" "$OUTPUT_DIR/nuclei_subdomains.log" > "$DBG_SUBDOMAINS_RESULTS_FILE"
+}
+
+# Función para ejecutar SecretFinder
+run_secretfinder() {
+  echo -e "${BLUE}[*] Running SecretFinder...${NC}"
+  echo -e "${BLUE}[*] Input file: $JS_URLS_FILE${NC}"
+  echo -e "${BLUE}[*] Output file: $SECRET_OUTPUT_FILE${NC}"
+  cat "$KATANA_OUTPUT_FILE" | grep -E '\.js$' > "$JS_URLS_FILE"
+  python3 /home/kali/secretfinder/SecretFinder.py -i "$JS_URLS_FILE" -o cli >> "$SECRET_OUTPUT_FILE" 2>> "$OUTPUT_DIR/script.log"
+  echo -e "${GREEN}[*] SecretFinder results saved to '$SECRET_OUTPUT_FILE'.${NC}"
+}
+
+# Configurar el manejo de señales
+trap 'handle_sigint' SIGINT
+
+# Validar entrada y opciones
+if [[ $# -eq 0 ]]; then
+  show_help
+  exit 1
+fi
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  show_help
+  exit 0
+fi
+
+# Preguntar si se deben enumerar subdominios
+read -p "Do you want to enumerate subdomains (y/n)? " enum_subdirs
+if [[ "$enum_subdirs" =~ ^[Yy]$ ]]; then
+  find_subdomains
+  check_subdomains_httpx
+  run_nuclei_on_subdomains
+else
+  echo -e "${BLUE}[*] Skipping subdomain enumeration. Using primary URL only...${NC}"
+  HTTPX_OUTPUT_FILE="$OUTPUT_DIR/${DOMAIN}_httpx.txt"
+  echo "https://$DOMAIN" > "$HTTPX_OUTPUT_FILE"
+fi
+
+# Preguntar si se debe ejecutar SecretFinder
+read -p "Do you want to run SecretFinder (y/n)? " run_secretfinder
+if [[ "$run_secretfinder" =~ ^[Yy]$ ]]; then
+  run_secretfinder
+else
+  echo -e "${YELLOW}[*] SecretFinder was not run.${NC}"
+fi
+
+PRIMARY_URL="https://$DOMAIN"
+run_katana
+extract_urls_with_equals
+run_nuclei
+
+echo -e "${GREEN}All tasks completed.${NC}"
