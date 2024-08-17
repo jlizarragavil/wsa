@@ -31,9 +31,22 @@
    git clone https://github.com/tu_usuario/tu_repositorio.git
    cd tu_repositorio
    ```
-Asegúrate de que el script tenga permisos de ejecución:
+2. Asegúrate de que el script tenga permisos de ejecución:
 
    ```bash
    chmod +x WebSecurityAudit.s
    ```
-   
+3. Configura el script:
+
+Modifica las rutas a las herramientas en el script si es necesario.
+
+Opciones
+-h, --help: Muestra la ayuda y la descripción de las herramientas utilizadas.
+
+Durante la ejecución, el script te preguntará si deseas:
+
+Enumerar subdominios.
+Ejecutar SecretFinder.
+Ejecutar un análisis de seguridad usando Katana y Nuclei.
+
+
