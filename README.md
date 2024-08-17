@@ -28,7 +28,7 @@
 1. **Clona el repositorio**:
 
    ```bash
-   git clone https://github.com/tu_usuario/tu_repositorio.git
+   git clone [https://github.com/tu_usuario/tu_repositorio.git](https://github.com/jlizarragavil/wsa.git)
    cd tu_repositorio
    ```
 2. Asegúrate de que el script tenga permisos de ejecución:
