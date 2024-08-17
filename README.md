@@ -29,12 +29,12 @@
 
    ```bash
    git clone https://github.com/jlizarragavil/wsa.git
-   cd tu_repositorio
+   cd wsa
    ```
 2. Asegúrate de que el script tenga permisos de ejecución:
 
    ```bash
-   chmod +x WebSecurityAudit.s
+   chmod +x wsa
    ```
 3. Configura el script:
 
